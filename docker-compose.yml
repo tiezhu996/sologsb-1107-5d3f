@@ -1,0 +1,10 @@
+name: gbpapermill
+
+services:
+  frontend:
+    build: ./frontend
+    image: gbpapermill-frontend:latest
+    container_name: ${COMPOSE_PROJECT_NAME:-gbpapermill}-frontend
+    ports:
+      - "${FRONTEND_PORT:-21807}:80"
+    restart: unless-stopped
