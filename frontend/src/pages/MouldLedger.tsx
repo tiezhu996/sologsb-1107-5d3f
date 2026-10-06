@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Box, Button, Card, CardContent, Chip, Divider, Grid, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from '@mui/material'
+import { Alert, Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Grid, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from '@mui/material'
 import { GrainStripePreview } from '../components/common/GrainStripePreview'
 import { RulerInput } from '../components/common/RulerInput'
 import { useMouldFilter } from '../hooks/useMouldFilter'
 import { useUnitConvert } from '../hooks/useUnitConvert'
 import { useMouldStore } from '../stores/mouldStore'
 import { useRunStore } from '../stores/runStore'
-import { MOULD_STATES, WIRE_MATERIALS, type MouldInput, type MouldStateValue, type WireMaterial } from '../types/mould'
+import { MOULD_STATES, WIRE_MATERIALS, type Mould, type MouldInput, type MouldStateValue, type WireMaterial } from '../types/mould'
 import { calculateMeshDensity } from '../utils/stripe'
 
 const emptyMouldForm: MouldInput = {
@@ -27,11 +27,16 @@ export default function MouldLedger() {
   const loadMoulds = useMouldStore((state) => state.loadMoulds)
   const addMould = useMouldStore((state) => state.addMould)
   const setMouldState = useMouldStore((state) => state.setMouldState)
+  const reviseMouldStandard = useMouldStore((state) => state.reviseMouldStandard)
   const runs = useRunStore((state) => state.sheetRuns)
   const loadRuns = useRunStore((state) => state.loadRuns)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<MouldInput>(emptyMouldForm)
   const [submitting, setSubmitting] = useState(false)
+  const [reviseTarget, setReviseTarget] = useState<Mould | null>(null)
+  const [reviseGap, setReviseGap] = useState(0)
+  const [reviseWire, setReviseWire] = useState(0)
+  const [reviseBusy, setReviseBusy] = useState(false)
   const { mmPitchToThreadsPerCm } = useUnitConvert()
   const {
     mouldNo,
@@ -71,6 +76,20 @@ export default function MouldLedger() {
       setForm(emptyMouldForm)
       setShowForm(false)
     }
+  }
+
+  const openRevise = (mould: Mould) => {
+    setReviseTarget(mould)
+    setReviseGap(mould.stripeGap)
+    setReviseWire(mould.wireDiameter)
+  }
+
+  const handleRevise = async () => {
+    if (!reviseTarget?.id || reviseGap <= 0 || reviseWire <= 0) return
+    setReviseBusy(true)
+    const ok = await reviseMouldStandard(reviseTarget.id, reviseGap, reviseWire)
+    setReviseBusy(false)
+    if (ok) setReviseTarget(null)
   }
 
   return (
@@ -227,16 +246,27 @@ export default function MouldLedger() {
                     <Chip size="small" color={mould.state === '在用' ? 'success' : mould.state === '待修补' ? 'warning' : 'default'} label={mould.state} />
                   </TableCell>
                   <TableCell align="right">
-                    <Button
-                      size="small"
-                      variant={mould.state === '待修补' ? 'contained' : 'outlined'}
-                      disabled={mould.state === '退役' || mould.id === undefined}
-                      onClick={() => {
-                        if (mould.id !== undefined) void setMouldState(mould.id, mould.state === '待修补' ? '在用' : '待修补')
-                      }}
-                    >
-                      {mould.state === '待修补' ? '完成修补' : '登记修补'}
-                    </Button>
+                    <Stack direction="row" spacing={0.75} justifyContent="flex-end" sx={{ flexWrap: 'wrap', gap: 0.5 }}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        disabled={mould.id === undefined}
+                        onClick={() => openRevise(mould)}
+                        data-testid={`revise-mould-${mould.id}`}
+                      >
+                        修订标准
+                      </Button>
+                      <Button
+                        size="small"
+                        variant={mould.state === '待修补' ? 'contained' : 'outlined'}
+                        disabled={mould.state === '退役' || mould.id === undefined}
+                        onClick={() => {
+                          if (mould.id !== undefined) void setMouldState(mould.id, mould.state === '待修补' ? '在用' : '待修补')
+                        }}
+                      >
+                        {mould.state === '待修补' ? '完成修补' : '登记修补'}
+                      </Button>
+                    </Stack>
                   </TableCell>
                 </TableRow>
               )
@@ -247,6 +277,33 @@ export default function MouldLedger() {
           </TableBody>
         </Table>
       </TableContainer>
+
+      <Dialog open={reviseTarget !== null} onClose={() => setReviseTarget(null)} maxWidth="sm" fullWidth data-testid="dialog-revise-mould">
+        <DialogTitle>修订帘纹标准 · {reviseTarget?.mouldNo}</DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 2, mt: 0.5 }}>
+            改动后关联的已结案结算单将立即失效并进入待对账；封存时的标准值仍保留在结算单内。
+          </Alert>
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6}>
+              <RulerInput label="帘纹间距" value={reviseGap} onChange={setReviseGap} min={0.1} max={5} step={0.01} testId="revise-stripeGap" />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <RulerInput label="丝径" value={reviseWire} onChange={setReviseWire} min={0.05} max={2} step={0.01} testId="revise-wireDiameter" />
+            </Grid>
+            <Grid item xs={12}>
+              <Chip color="success" label={`重算密度 ${calculateMeshDensity(reviseWire, reviseGap).toFixed(1)} 根/厘米`} />
+              <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 1 }}>
+                当前封存版本 rev {reviseTarget?.rev ?? 1}，保存后自动升至 rev {(reviseTarget?.rev ?? 1) + 1}。
+              </Typography>
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReviseTarget(null)}>取消</Button>
+          <Button variant="contained" color="warning" onClick={handleRevise} disabled={reviseBusy} data-testid="submit-revise-mould">保存修订</Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   )
 }

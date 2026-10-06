@@ -4,6 +4,7 @@ import FiberBatchList from '../pages/FiberBatchList'
 import MouldLedger from '../pages/MouldLedger'
 import RunBoard from '../pages/RunBoard'
 import SampleCards from '../pages/SampleCards'
+import SettlementBoard from '../pages/SettlementBoard'
 
 export function AppRoutes() {
   return (
@@ -13,6 +14,7 @@ export function AppRoutes() {
       <Route path="/fibers" element={<FiberBatchList />} />
       <Route path="/runs" element={<RunBoard />} />
       <Route path="/samples" element={<SampleCards />} />
+      <Route path="/settlements" element={<SettlementBoard />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { Alert, Box, Card, CardContent, Chip, Divider, Grid, LinearProgress, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material'
+import { Link } from 'react-router-dom'
 import { ProcessTimeline, type ProcessStep } from '../components/common/ProcessTimeline'
 import { StatBadge } from '../components/common/StatBadge'
 import { useMouldFilter } from '../hooks/useMouldFilter'
@@ -7,6 +8,7 @@ import { useFiberStore } from '../stores/fiberStore'
 import { useMouldStore } from '../stores/mouldStore'
 import { useRunStore } from '../stores/runStore'
 import { useSampleStore } from '../stores/sampleStore'
+import { useSettlementStore } from '../stores/settlementStore'
 import { isGapOutOfTolerance } from '../utils/stripe'
 
 function startOfCurrentWeek(): Date {
@@ -47,13 +49,17 @@ export default function Dashboard() {
   const samples = useSampleStore((state) => state.paperSamples)
   const sampleError = useSampleStore((state) => state.error)
   const loadSamples = useSampleStore((state) => state.loadSamples)
+  const settlements = useSettlementStore((state) => state.settlements)
+  const settlementError = useSettlementStore((state) => state.error)
+  const initSettlements = useSettlementStore((state) => state.init)
 
   useEffect(() => {
     void loadMoulds()
     void loadBatches()
     void loadRuns()
     void loadSamples()
-  }, [loadBatches, loadMoulds, loadRuns, loadSamples])
+    void initSettlements()
+  }, [initSettlements, loadBatches, loadMoulds, loadRuns, loadSamples])
 
   const { filteredMoulds: activeMoulds } = useMouldFilter(moulds, '', '在用')
   const currentWeekRuns = useMemo(() => runs.filter((run) => isInCurrentWeek(run.runDate)), [runs])
@@ -66,7 +72,8 @@ export default function Dashboard() {
     [runById, samples],
   )
   const activeRate = moulds.length ? Math.round((activeMoulds.length / moulds.length) * 100) : 0
-  const error = mouldError ?? batchError ?? runError ?? sampleError
+  const staleSettlements = useMemo(() => settlements.filter((settlement) => settlement.status === 'stale'), [settlements])
+  const error = mouldError ?? batchError ?? runError ?? sampleError ?? settlementError
 
   return (
     <Stack spacing={3}>
@@ -86,6 +93,9 @@ export default function Dashboard() {
         <StatBadge label="纤维料批" value={batches.length} detail="覆盖四类造纸纤维" tone="bamboo" />
         <StatBadge label="本周工序" value={currentWeekRuns.length} detail="按自然周统计" tone="bamboo" />
         <StatBadge label="待复检样本" value={pendingSamples.length} detail="匀度或帘纹偏差需复核" tone={pendingSamples.length ? 'warning' : 'neutral'} />
+        <Box component={Link} to="/settlements" sx={{ textDecoration: 'none', display: 'flex' }} data-testid="goto-settlements">
+          <StatBadge label="待对账结算单" value={staleSettlements.length} detail={staleSettlements.length ? '主数据已变，点击去对账' : '封存数据均有效'} tone={staleSettlements.length ? 'warning' : 'bamboo'} />
+        </Box>
       </Box>
 
       <Grid container spacing={2.5}>

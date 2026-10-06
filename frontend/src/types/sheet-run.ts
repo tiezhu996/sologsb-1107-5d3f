@@ -19,6 +19,8 @@ export interface SheetRun {
   measuredGap: number
   deviation: number
   schemaRev?: number
+  /** 主数据修订版本，每次改动自增；关联结算据此判断是否失效 */
+  rev?: number
 }
 
 export type SheetRunInput = Omit<SheetRun, 'id' | 'schemaRev'>

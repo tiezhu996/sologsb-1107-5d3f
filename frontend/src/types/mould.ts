@@ -16,6 +16,8 @@ export interface Mould {
   weaver: string
   state: MouldStateValue
   schemaRev?: number
+  /** 主数据修订版本，每次改动自增；关联结算据此判断是否失效 */
+  rev?: number
 }
 
 export type MouldInput = Omit<Mould, 'id' | 'schemaRev'>

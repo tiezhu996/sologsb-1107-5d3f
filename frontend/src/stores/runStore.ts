@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { SheetRun, SheetRunInput } from '../types/sheet-run'
 import { db, plain } from '../utils/db'
 import { calculateDeviation } from '../utils/stripe'
+import { emitSettlementChange, refreshStaleSettlements } from '../utils/settlementEngine'
 
 interface RunStore {
   sheetRuns: SheetRun[]
@@ -33,7 +34,7 @@ export const useRunStore = create<RunStore>((set, get) => ({
     try {
       const payload = plain(input)
       const id = Number(await db.sheetRuns.add(payload))
-      const created: SheetRun = { ...payload, id, schemaRev: 2 }
+      const created: SheetRun = { ...payload, id, schemaRev: 2, rev: 1 }
       set((state) => ({ sheetRuns: [created, ...state.sheetRuns] }))
       return created
     } catch {
@@ -44,11 +45,18 @@ export const useRunStore = create<RunStore>((set, get) => ({
   updateMeasuredGap: async (id, measuredGap, standardGap) => {
     const deviation = calculateDeviation(measuredGap, standardGap)
     try {
-      await db.sheetRuns.update(id, { measuredGap, deviation, schemaRev: 2 })
+      const current = await db.sheetRuns.get(id)
+      const rev = (current?.rev ?? 1) + 1
+      await db.sheetRuns.update(id, { measuredGap, deviation, rev, schemaRev: 2 })
       set((state) => ({
-        sheetRuns: state.sheetRuns.map((run) => (run.id === id ? { ...run, measuredGap, deviation, schemaRev: 2 } : run)),
+        sheetRuns: state.sheetRuns.map((run) =>
+          run.id === id ? { ...run, measuredGap, deviation, rev, schemaRev: 2 } : run,
+        ),
         error: null,
       }))
+      // 实测偏差改动，已封存结算立即失效并进入待对账
+      await refreshStaleSettlements()
+      emitSettlementChange()
     } catch {
       set({ error: '实测间距更新失败' })
     }

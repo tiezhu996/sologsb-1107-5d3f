@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import type { Mould, MouldInput, MouldStateValue } from '../types/mould'
 import { db, plain } from '../utils/db'
+import { calculateMeshDensity } from '../utils/stripe'
+import { emitSettlementChange, refreshStaleSettlements } from '../utils/settlementEngine'
 
 interface MouldStore {
   moulds: Mould[]
@@ -10,6 +12,7 @@ interface MouldStore {
   loadMoulds: () => Promise<void>
   addMould: (input: MouldInput) => Promise<Mould | null>
   setMouldState: (id: number, state: MouldStateValue) => Promise<void>
+  reviseMouldStandard: (id: number, stripeGap: number, wireDiameter: number) => Promise<boolean>
 }
 
 export const useMouldStore = create<MouldStore>((set, get) => ({
@@ -32,7 +35,7 @@ export const useMouldStore = create<MouldStore>((set, get) => ({
     try {
       const payload = plain(input)
       const id = Number(await db.moulds.add(payload))
-      const created: Mould = { ...payload, id, schemaRev: 2 }
+      const created: Mould = { ...payload, id, schemaRev: 2, rev: 1 }
       set((state) => ({ moulds: [created, ...state.moulds] }))
       return created
     } catch {
@@ -49,6 +52,34 @@ export const useMouldStore = create<MouldStore>((set, get) => ({
       }))
     } catch {
       set({ error: '纸帘状态更新失败' })
+    }
+  },
+  reviseMouldStandard: async (id, stripeGap, wireDiameter) => {
+    set({ error: null })
+    try {
+      const current = await db.moulds.get(id)
+      if (!current) throw new Error('纸帘不存在')
+      const meshDensity = calculateMeshDensity(wireDiameter, stripeGap)
+      await db.moulds.update(id, {
+        stripeGap,
+        wireDiameter,
+        meshDensity,
+        rev: (current.rev ?? 1) + 1,
+        schemaRev: 2,
+      })
+      set((state) => ({
+        moulds: state.moulds.map((mould) =>
+          mould.id === id ? { ...mould, stripeGap, wireDiameter, meshDensity, rev: (mould.rev ?? 1) + 1 } : mould,
+        ),
+        error: null,
+      }))
+      // 主数据一变，关联结算立即失效并进入待对账
+      await refreshStaleSettlements()
+      emitSettlementChange()
+      return true
+    } catch {
+      set({ error: '帘纹标准修订失败' })
+      return false
     }
   },
 }))

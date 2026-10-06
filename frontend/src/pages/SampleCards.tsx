@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Box, Button, Card, CardContent, Chip, Grid, Stack, TextField, Typography } from '@mui/material'
+import { Alert, Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Grid, Stack, TextField, Typography } from '@mui/material'
 import { GrainStripePreview } from '../components/common/GrainStripePreview'
 import { RulerInput } from '../components/common/RulerInput'
 import { StatBadge } from '../components/common/StatBadge'
@@ -7,7 +7,7 @@ import { useUnitConvert } from '../hooks/useUnitConvert'
 import { useMouldStore } from '../stores/mouldStore'
 import { useRunStore } from '../stores/runStore'
 import { useSampleStore } from '../stores/sampleStore'
-import { EVENNESS_LEVELS, type EvennessLevel, type PaperSampleInput } from '../types/paper-sample'
+import { EVENNESS_LEVELS, type EvennessLevel, type PaperSample, type PaperSampleInput } from '../types/paper-sample'
 import { isGapOutOfTolerance } from '../utils/stripe'
 
 const emptySampleForm: PaperSampleInput = {
@@ -30,6 +30,7 @@ export default function SampleCards() {
   const error = useSampleStore((state) => state.error)
   const loadSamples = useSampleStore((state) => state.loadSamples)
   const addSample = useSampleStore((state) => state.addSample)
+  const reviseSampleResult = useSampleStore((state) => state.reviseSampleResult)
   const runs = useRunStore((state) => state.sheetRuns)
   const runError = useRunStore((state) => state.error)
   const loadRuns = useRunStore((state) => state.loadRuns)
@@ -41,6 +42,10 @@ export default function SampleCards() {
   const [evennessFilter, setEvennessFilter] = useState<EvennessLevel | '全部'>('全部')
   const [stripeFloor, setStripeFloor] = useState(0)
   const [submitting, setSubmitting] = useState(false)
+  const [reviseTarget, setReviseTarget] = useState<PaperSample | null>(null)
+  const [reviseCount, setReviseCount] = useState(0)
+  const [reviseEvenness, setReviseEvenness] = useState<EvennessLevel>('均匀')
+  const [reviseBusy, setReviseBusy] = useState(false)
   const { mmToCm, formatGrammage } = useUnitConvert()
 
   useEffect(() => {
@@ -71,6 +76,20 @@ export default function SampleCards() {
       setForm(emptySampleForm)
       setShowForm(false)
     }
+  }
+
+  const openRevise = (sample: PaperSample) => {
+    setReviseTarget(sample)
+    setReviseCount(sample.stripeCount)
+    setReviseEvenness(sample.evenness)
+  }
+
+  const handleRevise = async () => {
+    if (!reviseTarget?.id || reviseCount <= 0) return
+    setReviseBusy(true)
+    const ok = await reviseSampleResult(reviseTarget.id, reviseCount, reviseEvenness)
+    setReviseBusy(false)
+    if (ok) setReviseTarget(null)
   }
 
   const errorMessage = error ?? runError ?? mouldError
@@ -177,6 +196,9 @@ export default function SampleCards() {
                   <Chip size="small" variant="outlined" label={`存档 ${sample.archiveBin}`} />
                   {run && isGapOutOfTolerance(run.deviation) && <Chip size="small" color="warning" label={`偏差 ${run.deviation > 0 ? '+' : ''}${run.deviation.toFixed(2)} mm`} />}
                 </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+                  <Button size="small" onClick={() => openRevise(sample)} data-testid={`revise-sample-${sample.id}`}>复测结果</Button>
+                </Box>
               </CardContent>
             </Card>
           )
@@ -185,6 +207,36 @@ export default function SampleCards() {
           <Card sx={{ gridColumn: '1 / -1' }}><CardContent sx={{ textAlign: 'center', py: 7 }}><Typography color="text.secondary">没有符合当前匀度与帘纹条数分档的样本</Typography></CardContent></Card>
         )}
       </Box>
+
+      <Dialog open={reviseTarget !== null} onClose={() => setReviseTarget(null)} maxWidth="xs" fullWidth data-testid="dialog-revise-sample">
+        <DialogTitle>复测样本结果 · {reviseTarget?.sampleNo}</DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 2, mt: 0.5 }}>
+            条数或匀度改动后，关联的已结案结算单将立即失效并进入待对账；封存时的样本结果仍保留在结算单内。
+          </Alert>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <RulerInput label="帘纹条数" value={reviseCount} onChange={setReviseCount} unit="条" min={1} max={300} step={1} testId="revise-stripeCount" />
+            <TextField
+              select
+              fullWidth
+              size="small"
+              label="匀度"
+              value={reviseEvenness}
+              onChange={(event) => setReviseEvenness(event.target.value as EvennessLevel)}
+              SelectProps={{ native: true, inputProps: { 'data-testid': 'revise-evenness' } }}
+            >
+              {EVENNESS_LEVELS.map((option) => <option key={option} value={option}>{option}</option>)}
+            </TextField>
+            <Typography variant="caption" color="text.secondary">
+              当前封存版本 rev {reviseTarget?.rev ?? 1}，保存后自动升至 rev {(reviseTarget?.rev ?? 1) + 1}。
+            </Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReviseTarget(null)}>取消</Button>
+          <Button variant="contained" color="warning" onClick={handleRevise} disabled={reviseBusy} data-testid="submit-revise-sample">保存复测</Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   )
 }

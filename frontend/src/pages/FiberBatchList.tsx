@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Card, CardContent, Chip, Divider, Grid, LinearProgress, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material'
+import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Grid, LinearProgress, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material'
 import { RulerInput } from '../components/common/RulerInput'
 import { useFiberStore } from '../stores/fiberStore'
 import { useRunStore } from '../stores/runStore'
-import { BLEACH_METHODS, COOK_AGENTS, FIBER_MATERIALS, type FiberBatchInput, type FiberMaterial, type CookAgent, type BleachMethod } from '../types/fiber-batch'
+import { BLEACH_METHODS, COOK_AGENTS, FIBER_MATERIALS, type FiberBatch, type FiberBatchInput, type FiberMaterial, type CookAgent, type BleachMethod } from '../types/fiber-batch'
 
 const emptyFiberForm: FiberBatchInput = {
   batchNo: '',
@@ -21,6 +21,7 @@ export default function FiberBatchList() {
   const error = useFiberStore((state) => state.error)
   const loadFiberBatches = useFiberStore((state) => state.loadFiberBatches)
   const addFiberBatch = useFiberStore((state) => state.addFiberBatch)
+  const reviseBeatingDegree = useFiberStore((state) => state.reviseBeatingDegree)
   const runs = useRunStore((state) => state.sheetRuns)
   const loadRuns = useRunStore((state) => state.loadRuns)
   const [showForm, setShowForm] = useState(false)
@@ -28,6 +29,9 @@ export default function FiberBatchList() {
   const [materialFilter, setMaterialFilter] = useState<FiberMaterial | '全部'>('全部')
   const [degreeLimit, setDegreeLimit] = useState(45)
   const [submitting, setSubmitting] = useState(false)
+  const [reviseTarget, setReviseTarget] = useState<FiberBatch | null>(null)
+  const [reviseDegree, setReviseDegree] = useState(30)
+  const [reviseBusy, setReviseBusy] = useState(false)
 
   useEffect(() => {
     void loadFiberBatches()
@@ -55,6 +59,19 @@ export default function FiberBatchList() {
       setForm(emptyFiberForm)
       setShowForm(false)
     }
+  }
+
+  const openRevise = (batch: FiberBatch) => {
+    setReviseTarget(batch)
+    setReviseDegree(batch.beatingDegree)
+  }
+
+  const handleRevise = async () => {
+    if (!reviseTarget?.id || reviseDegree <= 0) return
+    setReviseBusy(true)
+    const ok = await reviseBeatingDegree(reviseTarget.id, reviseDegree)
+    setReviseBusy(false)
+    if (ok) setReviseTarget(null)
   }
 
   return (
@@ -144,7 +161,17 @@ export default function FiberBatchList() {
                       <LinearProgress variant="determinate" value={batch.beatingDegree} color="success" sx={{ flex: 1, height: 8, borderRadius: 4 }} />
                     </Box>
                   </Grid>
-                  <Grid item xs={12} md={3}><Typography variant="body2" color="text.secondary">{batch.bleachMethod} · {batch.operator} · 引用 {relatedRuns.length} 次</Typography></Grid>
+                  <Grid item xs={12} md={3} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography variant="body2" color="text.secondary">{batch.bleachMethod} · {batch.operator} · 引用 {relatedRuns.length} 次</Typography>
+                    <Button
+                      size="small"
+                      sx={{ ml: 'auto' }}
+                      onClick={(event) => { event.stopPropagation(); openRevise(batch) }}
+                      data-testid={`revise-batch-${batch.id}`}
+                    >
+                      修订打浆度
+                    </Button>
+                  </Grid>
                 </Grid>
               </AccordionSummary>
               <AccordionDetails sx={{ bgcolor: '#faf6ec' }}>
@@ -178,6 +205,25 @@ export default function FiberBatchList() {
           <Card><CardContent sx={{ textAlign: 'center', py: 6 }}><Typography color="text.secondary">没有符合当前原料与打浆度范围的料批</Typography></CardContent></Card>
         )}
       </Stack>
+
+      <Dialog open={reviseTarget !== null} onClose={() => setReviseTarget(null)} maxWidth="xs" fullWidth data-testid="dialog-revise-batch">
+        <DialogTitle>修订打浆度 · {reviseTarget?.batchNo}</DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 2, mt: 0.5 }}>
+            改动后关联的已结案结算单将立即失效并进入待对账；封存时的打浆度仍保留在结算单内。
+          </Alert>
+          <Box sx={{ mt: 1 }}>
+            <RulerInput label="打浆度" value={reviseDegree} onChange={setReviseDegree} unit="°SR" min={10} max={60} step={1} testId="revise-beatingDegree" />
+          </Box>
+          <Typography variant="caption" color="text.secondary">
+            当前封存版本 rev {reviseTarget?.rev ?? 1}，保存后自动升至 rev {(reviseTarget?.rev ?? 1) + 1}。
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReviseTarget(null)}>取消</Button>
+          <Button variant="contained" color="warning" onClick={handleRevise} disabled={reviseBusy} data-testid="submit-revise-batch">保存修订</Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   )
 }
