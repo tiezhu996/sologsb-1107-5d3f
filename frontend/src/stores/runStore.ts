@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { SheetRun, SheetRunInput } from '../types/sheet-run'
 import { db, plain } from '../utils/db'
 import { calculateDeviation } from '../utils/stripe'
+import { useSettlementStore } from './settlementStore'
 
 interface RunStore {
   sheetRuns: SheetRun[]
@@ -49,6 +50,7 @@ export const useRunStore = create<RunStore>((set, get) => ({
         sheetRuns: state.sheetRuns.map((run) => (run.id === id ? { ...run, measuredGap, deviation, schemaRev: 2 } : run)),
         error: null,
       }))
+      void useSettlementStore.getState().syncWithMasterData()
     } catch {
       set({ error: '实测间距更新失败' })
     }

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { PaperSample, PaperSampleInput } from '../types/paper-sample'
 import { db, plain } from '../utils/db'
+import { useSettlementStore } from './settlementStore'
 
 interface SampleStore {
   paperSamples: PaperSample[]
@@ -33,6 +34,7 @@ export const useSampleStore = create<SampleStore>((set, get) => ({
       const id = Number(await db.paperSamples.add(payload))
       const created: PaperSample = { ...payload, id, schemaRev: 2 }
       set((state) => ({ paperSamples: [created, ...state.paperSamples] }))
+      void useSettlementStore.getState().syncWithMasterData()
       return created
     } catch {
       set({ error: '样本登记失败，请检查样本编号是否重复' })

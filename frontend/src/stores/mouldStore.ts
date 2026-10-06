@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Mould, MouldInput, MouldStateValue } from '../types/mould'
 import { db, plain } from '../utils/db'
+import { useSettlementStore } from './settlementStore'
 
 interface MouldStore {
   moulds: Mould[]
@@ -47,6 +48,7 @@ export const useMouldStore = create<MouldStore>((set, get) => ({
         moulds: state.moulds.map((mould) => (mould.id === id ? { ...mould, state: nextState, schemaRev: 2 } : mould)),
         error: null,
       }))
+      void useSettlementStore.getState().syncWithMasterData()
     } catch {
       set({ error: '纸帘状态更新失败' })
     }

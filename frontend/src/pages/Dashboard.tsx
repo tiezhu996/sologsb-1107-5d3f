@@ -7,6 +7,7 @@ import { useFiberStore } from '../stores/fiberStore'
 import { useMouldStore } from '../stores/mouldStore'
 import { useRunStore } from '../stores/runStore'
 import { useSampleStore } from '../stores/sampleStore'
+import { useSettlementStore } from '../stores/settlementStore'
 import { isGapOutOfTolerance } from '../utils/stripe'
 
 function startOfCurrentWeek(): Date {
@@ -47,13 +48,17 @@ export default function Dashboard() {
   const samples = useSampleStore((state) => state.paperSamples)
   const sampleError = useSampleStore((state) => state.error)
   const loadSamples = useSampleStore((state) => state.loadSamples)
+  const settlements = useSettlementStore((state) => state.settlements)
+  const settlementError = useSettlementStore((state) => state.error)
+  const loadSettlements = useSettlementStore((state) => state.loadSettlements)
 
   useEffect(() => {
     void loadMoulds()
     void loadBatches()
     void loadRuns()
     void loadSamples()
-  }, [loadBatches, loadMoulds, loadRuns, loadSamples])
+    void loadSettlements()
+  }, [loadBatches, loadMoulds, loadRuns, loadSamples, loadSettlements])
 
   const { filteredMoulds: activeMoulds } = useMouldFilter(moulds, '', '在用')
   const currentWeekRuns = useMemo(() => runs.filter((run) => isInCurrentWeek(run.runDate)), [runs])
@@ -66,7 +71,8 @@ export default function Dashboard() {
     [runById, samples],
   )
   const activeRate = moulds.length ? Math.round((activeMoulds.length / moulds.length) * 100) : 0
-  const error = mouldError ?? batchError ?? runError ?? sampleError
+  const reconcilingCount = settlements.filter((settlement) => settlement.status === '待对账').length
+  const error = mouldError ?? batchError ?? runError ?? sampleError ?? settlementError
 
   return (
     <Stack spacing={3}>
@@ -86,6 +92,7 @@ export default function Dashboard() {
         <StatBadge label="纤维料批" value={batches.length} detail="覆盖四类造纸纤维" tone="bamboo" />
         <StatBadge label="本周工序" value={currentWeekRuns.length} detail="按自然周统计" tone="bamboo" />
         <StatBadge label="待复检样本" value={pendingSamples.length} detail="匀度或帘纹偏差需复核" tone={pendingSamples.length ? 'warning' : 'neutral'} />
+        <StatBadge label="待对账结算" value={reconcilingCount} detail="主数据变动待核对" tone={reconcilingCount ? 'warning' : 'neutral'} />
       </Box>
 
       <Grid container spacing={2.5}>
